@@ -84,16 +84,19 @@ jobs:
           ls -lh release/
           cat release/SHA256SUMS.txt
 
-      - name: Create prerelease
+      - name: Create prerelease in public build repository
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: Saeiddvc/Vara-NG-Build
         shell: bash
         run: |
           set -euo pipefail
           SHORT="$(echo "${{ inputs.sha }}" | cut -c1-8)"
           TAG="vara-ng-device-gate-${SHORT}"
-          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          gh release delete "$TAG" --repo "$GH_REPO" --yes --cleanup-tag 2>/dev/null || true
           gh release create "$TAG" \
+            --repo "$GH_REPO" \
+            --target main \
             --title "Vara NG Device Gate — ${SHORT}" \
             --notes "Built from private source Saeiddvc/SaeidVPN-Android at ${{ inputs.sha }} (ref ${{ inputs.ref }})." \
             --prerelease \
