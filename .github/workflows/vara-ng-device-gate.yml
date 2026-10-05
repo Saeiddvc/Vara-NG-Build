@@ -1,0 +1,100 @@
+name: Vara NG Device Gate Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: 'Commit SHA on SaeidVPN-Android'
+        required: true
+        type: string
+      ref:
+        description: 'Source branch (informational)'
+        required: true
+        default: 'v2/main'
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Private Source
+        uses: actions/checkout@v4
+        with:
+          repository: Saeiddvc/SaeidVPN-Android
+          ref: ${{ inputs.sha }}
+          token: ${{ secrets.VARA_PRIVATE_REPO_PAT }}
+          fetch-depth: 1
+
+      - name: Verify exact source SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          echo "Checked out SHA: $ACTUAL_SHA"
+          test "$ACTUAL_SHA" = "${{ inputs.sha }}" || {
+            echo "::error::SHA mismatch: expected ${{ inputs.sha }}, got $ACTUAL_SHA"
+            exit 1
+          }
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Prepare Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          if [ -x "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
+            CT="$SDK_ROOT/cmdline-tools/latest/bin"
+          else
+            CT="$(find "$SDK_ROOT/cmdline-tools" -maxdepth 2 -type d -name bin 2>/dev/null | sort -V | tail -1)"
+          fi
+          test -n "$CT"
+          echo "$CT" >> "$GITHUB_PATH"
+          echo "$SDK_ROOT/platform-tools" >> "$GITHUB_PATH"
+          yes | "$CT/sdkmanager" --licenses > /dev/null 2>&1 || true
+          "$CT/sdkmanager" --install "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Bootstrap Gradle wrapper
+        shell: bash
+        run: bash bootstrap.sh
+
+      - name: Build debug APK
+        shell: bash
+        run: ./gradlew :androidApp:assembleDebug --stacktrace
+
+      - name: Package release files
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          SRC="$(find androidApp/build/outputs/apk/debug -name '*.apk' -type f | head -1)"
+          test -n "$SRC"
+          SHORT="$(echo "${{ inputs.sha }}" | cut -c1-8)"
+          cp "$SRC" "release/Vara-NG-Device-Gate-${SHORT}.apk"
+          (cd release && sha256sum *.apk > SHA256SUMS.txt)
+          ls -lh release/
+          cat release/SHA256SUMS.txt
+
+      - name: Create prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHORT="$(echo "${{ inputs.sha }}" | cut -c1-8)"
+          TAG="vara-ng-device-gate-${SHORT}"
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" \
+            --title "Vara NG Device Gate — ${SHORT}" \
+            --notes "Built from private source Saeiddvc/SaeidVPN-Android at ${{ inputs.sha }} (ref ${{ inputs.ref }})." \
+            --prerelease \
+            release/*.apk release/SHA256SUMS.txt
