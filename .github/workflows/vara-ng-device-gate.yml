@@ -67,6 +67,32 @@ jobs:
         shell: bash
         run: bash bootstrap.sh
 
+      - name: Diagnostic - Inspect libbox RoutePrefix API
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "--- Resolving libbox dependency ---"
+          ./gradlew :androidApp:dependencies --configuration debugRuntimeClasspath > /dev/null 2>&1 || true
+
+          echo "--- Locating libbox AAR file ---"
+          AAR_PATH=$(find ~/.gradle/caches/modules-2/files-2.1/com.github.singbox-android/libbox -name "*.aar" | head -n 1)
+          if [ -z "$AAR_PATH" ]; then
+            echo "::error::libbox AAR not found in Gradle cache."
+            exit 1
+          fi
+          echo "Found AAR: $AAR_PATH"
+
+          echo "--- Extracting classes.jar ---"
+          rm -rf /tmp/libbox_inspect
+          mkdir -p /tmp/libbox_inspect
+          unzip -o "$AAR_PATH" classes.jar -d /tmp/libbox_inspect
+
+          echo "--- Inspecting io.nekohasekai.libbox.RoutePrefix ---"
+          javap -classpath /tmp/libbox_inspect/classes.jar -p io.nekohasekai.libbox.RoutePrefix
+
+          echo "--- Inspecting io.nekohasekai.libbox.RoutePrefixIterator ---"
+          javap -classpath /tmp/libbox_inspect/classes.jar -p io.nekohasekai.libbox.RoutePrefixIterator
+
       - name: Build debug APK
         shell: bash
         run: ./gradlew :androidApp:assembleDebug --stacktrace
