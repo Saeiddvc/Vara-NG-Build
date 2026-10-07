@@ -67,84 +67,90 @@ jobs:
         shell: bash
         run: bash bootstrap.sh
 
-      - name: Diagnostic - Inspect libbox RoutePrefix API
+      - name: Diagnostic - Resolve libbox from Gradle configuration
         shell: bash
         run: |
           set -uo pipefail
 
-          echo "=========================================="
-          echo "### Step 1: Force Gradle to resolve libbox ###"
-          echo "=========================================="
-          ./gradlew :androidApp:dependencies --configuration debugRuntimeClasspath > /tmp/deps.txt 2>&1 || true
-          grep -i "libbox" /tmp/deps.txt || echo "No libbox in dependency tree output"
+          echo "### Run Gradle task to enumerate real classpath ###"
+          ./gradlew :androidApp:printLibboxCompileClasspath --no-daemon 2>&1 | tee /tmp/cp.log || true
 
           echo ""
-          echo "=========================================="
-          echo "### Step 2: Search for libbox artifacts in Gradle caches ###"
-          echo "=========================================="
-          echo "--- Any path matching 'libbox' ---"
-          find ~/.gradle/caches -iname "*libbox*" 2>/dev/null | head -30 || echo "(none)"
+          echo "### LIBBOX entries from Gradle ###"
+          grep -E "^LIBBOX_(COMPONENT|FILE|IS_)" /tmp/cp.log || echo "(no LIBBOX_ lines)"
 
           echo ""
-          echo "--- Any AAR file matching libbox ---"
-          find ~/.gradle -name "*.aar" 2>/dev/null | grep -i libbox | head -10 || echo "(none)"
+          echo "### CP_ENTRY lines mentioning libbox ###"
+          grep -i "libbox" /tmp/cp.log | grep "^CP_ENTRY:" || echo "(none)"
 
           echo ""
-          echo "=========================================="
-          echo "### Step 3: Find classes.jar containing RoutePrefix.class ###"
-          echo "=========================================="
-          FOUND=""
-          while IFS= read -r jar; do
-            if unzip -l "$jar" 2>/dev/null | grep -q "io/nekohasekai/libbox/RoutePrefix.class"; then
-              FOUND="$jar"
-              break
+          echo "### All CP_ENTRY paths (first 40) ###"
+          grep "^CP_ENTRY:" /tmp/cp.log | head -40 || echo "(none)"
+
+          echo ""
+          echo "### Searching CP_ENTRY paths for RoutePrefix.class ###"
+          FOUND_JAR=""
+          while IFS= read -r line; do
+            p="${line#CP_ENTRY: }"
+            [ -z "$p" ] && continue
+            [ ! -e "$p" ] && continue
+
+            if [ -f "$p" ]; then
+              if unzip -l "$p" 2>/dev/null | grep -q "nekohasekai/libbox/RoutePrefix.class"; then
+                FOUND_JAR="$p"; echo "HIT(file): $p"; break
+              fi
+              if unzip -l "$p" 2>/dev/null | grep -q "classes.jar"; then
+                rm -rf /tmp/aar_x && mkdir -p /tmp/aar_x
+                unzip -o "$p" "classes.jar" -d /tmp/aar_x > /dev/null 2>&1 || true
+                if [ -f /tmp/aar_x/classes.jar ] && \
+                   unzip -l /tmp/aar_x/classes.jar 2>/dev/null | grep -q "nekohasekai/libbox/RoutePrefix.class"; then
+                  FOUND_JAR="/tmp/aar_x/classes.jar"; echo "HIT(aar-extracted): $p"; break
+                fi
+              fi
+            elif [ -d "$p" ]; then
+              while IFS= read -r jar; do
+                if unzip -l "$jar" 2>/dev/null | grep -q "nekohasekai/libbox/RoutePrefix.class"; then
+                  FOUND_JAR="$jar"; echo "HIT(dir): $jar"; break 2
+                fi
+              done < <(find "$p" -name "*.jar" -type f 2>/dev/null)
             fi
-          done < <(find ~/.gradle/caches -name "classes.jar" -type f 2>/dev/null)
+          done < <(grep "^CP_ENTRY:" /tmp/cp.log)
 
-          if [ -z "$FOUND" ]; then
+          if [ -z "$FOUND_JAR" ]; then
+            echo ""
+            echo "### Fallback: searching transforms for any nekohasekai/libbox .class ###"
+            SAMPLE_JAR=""
             while IFS= read -r jar; do
-              if unzip -l "$jar" 2>/dev/null | grep -q "io/nekohasekai/libbox/RoutePrefix.class"; then
-                FOUND="$jar"
+              if unzip -l "$jar" 2>/dev/null | grep -q "nekohasekai/libbox/"; then
+                SAMPLE_JAR="$jar"
+                echo "SAMPLE: $jar"
+                unzip -l "$jar" 2>/dev/null | grep "nekohasekai/libbox/" | head -30
                 break
               fi
-            done < <(find ~/.gradle/caches/transforms-* -name "*.jar" -type f 2>/dev/null)
+            done < <(find ~/.gradle/caches -name "*.jar" -type f 2>/dev/null | head -3000)
+            FOUND_JAR="$SAMPLE_JAR"
           fi
 
-          if [ -z "$FOUND" ]; then
-            echo "::error::RoutePrefix class not found in any jar under ~/.gradle"
-            echo "Listing sample of classes.jar files found:"
-            find ~/.gradle/caches -name "classes.jar" 2>/dev/null | head -20
-            echo ""
-            echo "Listing all .aar files:"
-            find ~/.gradle -name "*.aar" 2>/dev/null | head -20
+          if [ -z "$FOUND_JAR" ]; then
+            echo "::error::RoutePrefix.class not found anywhere"
+            echo "--- Listing all libbox-named files in Gradle cache ---"
+            find ~/.gradle/caches -iname "*libbox*" 2>/dev/null | head -40
             exit 0
           fi
 
-          echo "FOUND JAR: $FOUND"
-          echo ""
-
-          echo "=========================================="
-          echo "### Step 4: javap io.nekohasekai.libbox.RoutePrefix ###"
-          echo "=========================================="
-          javap -classpath "$FOUND" -p io.nekohasekai.libbox.RoutePrefix 2>&1 || echo "(javap failed)"
-
           echo ""
           echo "=========================================="
-          echo "### Step 5: javap io.nekohasekai.libbox.RoutePrefixIterator ###"
+          echo "FOUND_JAR=$FOUND_JAR"
           echo "=========================================="
-          javap -classpath "$FOUND" -p io.nekohasekai.libbox.RoutePrefixIterator 2>&1 || echo "(javap failed)"
-
           echo ""
-          echo "=========================================="
-          echo "### Step 6: javap io.nekohasekai.libbox.TunOptions ###"
-          echo "=========================================="
-          javap -classpath "$FOUND" -p io.nekohasekai.libbox.TunOptions 2>&1 || echo "(javap failed)"
-
+          echo "### javap io.nekohasekai.libbox.RoutePrefix ###"
+          javap -classpath "$FOUND_JAR" -p io.nekohasekai.libbox.RoutePrefix 2>&1 || echo "(javap failed)"
           echo ""
-          echo "=========================================="
-          echo "### Step 7: Full class list in nekohasekai.libbox ###"
-          echo "=========================================="
-          unzip -l "$FOUND" 2>/dev/null | grep "nekohasekai/libbox/Route" || echo "(none)"
+          echo "### javap io.nekohasekai.libbox.RoutePrefixIterator ###"
+          javap -classpath "$FOUND_JAR" -p io.nekohasekai.libbox.RoutePrefixIterator 2>&1 || echo "(javap failed)"
+          echo ""
+          echo "### javap io.nekohasekai.libbox.TunOptions ###"
+          javap -classpath "$FOUND_JAR" -p io.nekohasekai.libbox.TunOptions 2>&1 || echo "(javap failed)"
 
       - name: Build debug APK
         shell: bash
