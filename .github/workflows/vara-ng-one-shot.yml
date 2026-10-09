@@ -17,7 +17,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: Saeiddvc/SaeidVPN-Android
-          ref: 4d9962818db360455409caa7fa91e8c72dab9e83
+          ref: b8fef3727373b88285a8d952d06f388e5d151b56
           token: ${{ secrets.VARA_PRIVATE_REPO_PAT }}
           fetch-depth: 1
 
@@ -27,7 +27,7 @@ jobs:
           set -euo pipefail
           ACTUAL_SHA="$(git rev-parse HEAD)"
           echo "Checked out SHA: $ACTUAL_SHA"
-          test "$ACTUAL_SHA" = "4d9962818db360455409caa7fa91e8c72dab9e83"
+          test "$ACTUAL_SHA" = "b8fef3727373b88285a8d952d06f388e5d151b56"
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -66,7 +66,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          SHORT="4d996281"
+          SHORT="b8fef372"
           mkdir -p release
           SRC="$(find androidApp/build/outputs/apk/debug -name '*.apk' -type f | head -1)"
           test -n "$SRC"
@@ -77,5 +77,5 @@ jobs:
           gh release delete "$TAG" --repo "$GH_REPO" --yes --cleanup-tag 2>/dev/null || true
           gh release create "$TAG" --repo "$GH_REPO" --target main \
             --title "Vara NG Phase 3A — ${SHORT}" \
-            --notes "Built from private source 4d9962818db360455409caa7fa91e8c72dab9e83." \
+            --notes "Built from private source b8fef3727373b88285a8d952d06f388e5d151b56." \
             --prerelease "$APK" release/SHA256SUMS.txt
