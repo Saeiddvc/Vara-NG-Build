@@ -1,0 +1,81 @@
+name: Vara NG One Shot Build
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/vara-ng-one-shot.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Private Source
+        uses: actions/checkout@v4
+        with:
+          repository: Saeiddvc/SaeidVPN-Android
+          ref: 4d9962818db360455409caa7fa91e8c72dab9e83
+          token: ${{ secrets.VARA_PRIVATE_REPO_PAT }}
+          fetch-depth: 1
+
+      - name: Verify exact source SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          echo "Checked out SHA: $ACTUAL_SHA"
+          test "$ACTUAL_SHA" = "4d9962818db360455409caa7fa91e8c72dab9e83"
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Prepare Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          if [ -x "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
+            CT="$SDK_ROOT/cmdline-tools/latest/bin"
+          else
+            CT="$(find "$SDK_ROOT/cmdline-tools" -maxdepth 2 -type d -name bin 2>/dev/null | sort -V | tail -1)"
+          fi
+          test -n "$CT"
+          yes | "$CT/sdkmanager" --licenses > /dev/null 2>&1 || true
+          "$CT/sdkmanager" --install "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Bootstrap Gradle wrapper
+        shell: bash
+        run: bash bootstrap.sh
+
+      - name: Build debug APK
+        shell: bash
+        run: ./gradlew :androidApp:assembleDebug --stacktrace
+
+      - name: Publish prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: Saeiddvc/Vara-NG-Build
+        shell: bash
+        run: |
+          set -euo pipefail
+          SHORT="4d996281"
+          mkdir -p release
+          SRC="$(find androidApp/build/outputs/apk/debug -name '*.apk' -type f | head -1)"
+          test -n "$SRC"
+          APK="release/Vara-NG-Phase3A-${SHORT}.apk"
+          cp "$SRC" "$APK"
+          (cd release && sha256sum *.apk > SHA256SUMS.txt)
+          TAG="vara-ng-phase3a-${SHORT}"
+          gh release delete "$TAG" --repo "$GH_REPO" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" --repo "$GH_REPO" --target main \
+            --title "Vara NG Phase 3A — ${SHORT}" \
+            --notes "Built from private source 4d9962818db360455409caa7fa91e8c72dab9e83." \
+            --prerelease "$APK" release/SHA256SUMS.txt
