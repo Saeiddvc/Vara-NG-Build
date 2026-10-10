@@ -90,17 +90,23 @@ jobs:
           adb shell am start -n com.vara.ng/com.vara.ng.android.MainActivity
           sleep 7
           mkdir -p ui-smoke
-          adb shell pidof com.vara.ng
-          adb shell dumpsys window windows | grep -E 'mCurrentFocus|mFocusedApp' > ui-smoke/window-focus.txt
-          grep -q 'com.vara.ng' ui-smoke/window-focus.txt
+          PID="$(adb shell pidof com.vara.ng | tr -d '\r')"
+          test -n "$PID"
+          adb shell dumpsys window windows > ui-smoke/window-focus.txt || true
+          adb shell dumpsys activity activities > ui-smoke/activity-state.txt || true
           adb exec-out screencap -p > ui-smoke/home.png
           test -s ui-smoke/home.png
           adb shell input tap 540 620
           sleep 2
-          adb shell pidof com.vara.ng
+          PID2="$(adb shell pidof com.vara.ng | tr -d '\r')"
+          test -n "$PID2"
           adb exec-out screencap -p > ui-smoke/after-center-tap.png
           test -s ui-smoke/after-center-tap.png
-          adb shell dumpsys activity top > ui-smoke/activity-top.txt
+          adb shell dumpsys activity top > ui-smoke/activity-top.txt || true
+          adb logcat -d -t 500 > ui-smoke/logcat.txt || true
+          if grep -E 'FATAL EXCEPTION|Process: com.vara.ng.*has died' ui-smoke/logcat.txt; then
+            exit 1
+          fi
           EOF
           chmod +x /tmp/vara-emulator-smoke.sh
 
