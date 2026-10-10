@@ -86,8 +86,8 @@ jobs:
           test -s "$APK"
           echo "Installing $APK"
           adb install -r "$APK"
-          adb shell pm grant com.vara.ng.android android.permission.POST_NOTIFICATIONS || true
-          adb shell am start -n com.vara.ng.android/.MainActivity
+          adb shell pm grant com.vara.ng android.permission.POST_NOTIFICATIONS || true
+          adb shell am start -n com.vara.ng/com.vara.ng.android.MainActivity
           sleep 7
           mkdir -p ui-smoke
           adb exec-out screencap -p > ui-smoke/home.png
