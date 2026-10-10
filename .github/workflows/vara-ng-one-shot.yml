@@ -74,15 +74,6 @@ jobs:
           grep -q 'libwg-go.so' /tmp/apk-files.txt
           echo "APK sanity: libbox + WireGuard native runtimes present"
 
-      - name: Prepare emulator APK
-        shell: bash
-        run: |
-          set -euo pipefail
-          APK="$(find androidApp/build/outputs/apk/debug -name '*.apk' -type f | head -1)"
-          test -n "$APK"
-          cp "$APK" $HOME/Vara-NG-UI-Smoke.apk
-          test -s $HOME/Vara-NG-UI-Smoke.apk
-
       - name: Emulator UI smoke and screenshots
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -93,7 +84,10 @@ jobs:
           script: |
             set -e
             cd "$GITHUB_WORKSPACE"
-            APK="$HOME/Vara-NG-UI-Smoke.apk"
+            bash bootstrap.sh
+            ./gradlew :androidApp:assembleDebug --stacktrace
+            APK="$(find "$GITHUB_WORKSPACE/androidApp/build/outputs/apk/debug" -name '*.apk' -type f | head -1)"
+            test -n "$APK"
             test -s "$APK"
             echo "Installing $APK"
             adb install -r "$APK"
