@@ -83,8 +83,7 @@ jobs:
           disable-animations: false
           script: |
             set -e
-            APK="$(find androidApp/build/outputs/apk/debug -name '*.apk' -type f | head -1)"
-            adb install -r "$APK"
+            adb install -r "$(find androidApp/build/outputs/apk/debug -name '*.apk' -type f | head -1)"
             adb shell pm grant com.vara.ng.android android.permission.POST_NOTIFICATIONS || true
             adb shell am start -n com.vara.ng.android/.MainActivity
             sleep 7
