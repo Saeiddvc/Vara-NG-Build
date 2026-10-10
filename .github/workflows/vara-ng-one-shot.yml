@@ -80,8 +80,8 @@ jobs:
           set -euo pipefail
           APK="$(find androidApp/build/outputs/apk/debug -name '*.apk' -type f | head -1)"
           test -n "$APK"
-          cp "$APK" /tmp/Vara-NG-UI-Smoke.apk
-          test -s /tmp/Vara-NG-UI-Smoke.apk
+          cp "$APK" $HOME/Vara-NG-UI-Smoke.apk
+          test -s $HOME/Vara-NG-UI-Smoke.apk
 
       - name: Emulator UI smoke and screenshots
         uses: reactivecircus/android-emulator-runner@v2
@@ -93,7 +93,7 @@ jobs:
           script: |
             set -e
             cd "$GITHUB_WORKSPACE"
-            APK="/tmp/Vara-NG-UI-Smoke.apk"
+            APK="$HOME/Vara-NG-UI-Smoke.apk"
             test -s "$APK"
             echo "Installing $APK"
             adb install -r "$APK"
